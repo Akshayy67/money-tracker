@@ -1,11 +1,13 @@
 package com.aimoneytracker
 
 import android.content.Intent
+import android.os.Build
 import android.os.Bundle
 import android.view.WindowManager
 import androidx.activity.compose.setContent
-import androidx.fragment.app.FragmentActivity
 import androidx.biometric.BiometricManager
+import androidx.biometric.BiometricManager.Authenticators.BIOMETRIC_WEAK
+import androidx.biometric.BiometricManager.Authenticators.DEVICE_CREDENTIAL
 import androidx.biometric.BiometricPrompt
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -16,6 +18,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -24,6 +27,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
+import androidx.fragment.app.FragmentActivity
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.compose.rememberNavController
 import com.aimoneytracker.data.preferences.SettingsRepository
@@ -58,15 +62,39 @@ class MainActivity : FragmentActivity() {
 
             AIMoneyTrackerTheme(darkMode = settings.darkMode, dynamicColor = settings.dynamicColor) {
                 Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
-                    var unlocked by remember { mutableStateOf(!settings.appLock) }
+                    // Key the unlock state on appLock so it correctly re-initializes once the real
+                    // setting loads (the initial emission is the default appLock=false).
+                    var unlocked by remember(settings.appLock) { mutableStateOf(!settings.appLock) }
+                    var authError by remember { mutableStateOf<String?>(null) }
+
                     when {
                         // First-run: scan & analyse past SMS before entering the app.
                         !settings.onboarded -> PastAnalyzerScreen(onComplete = {})
-                        settings.appLock && !unlocked -> LockScreen(
-                            biometricEnabled = settings.biometric,
-                            onUnlock = { unlocked = true },
-                            onRequestBiometric = { authenticate { unlocked = true } },
-                        )
+
+                        settings.appLock && !unlocked -> {
+                            // Auto-prompt biometrics as soon as the lock screen appears.
+                            LaunchedEffect(settings.biometric) {
+                                if (settings.biometric) {
+                                    authenticate(
+                                        onSuccess = { unlocked = true },
+                                        onError = { msg -> authError = msg },
+                                    )
+                                }
+                            }
+                            LockScreen(
+                                biometricEnabled = settings.biometric,
+                                error = authError,
+                                onUnlock = { unlocked = true },
+                                onRequestBiometric = {
+                                    authError = null
+                                    authenticate(
+                                        onSuccess = { unlocked = true },
+                                        onError = { msg -> authError = msg },
+                                    )
+                                },
+                            )
+                        }
+
                         else -> {
                             val navController = rememberNavController()
                             AppNavHost(navController = navController, startDeepLink = link)
@@ -96,10 +124,35 @@ class MainActivity : FragmentActivity() {
         else window.clearFlags(WindowManager.LayoutParams.FLAG_SECURE)
     }
 
-    private fun authenticate(onSuccess: () -> Unit) {
-        val canAuth = BiometricManager.from(this)
-            .canAuthenticate(BiometricManager.Authenticators.BIOMETRIC_WEAK or BiometricManager.Authenticators.DEVICE_CREDENTIAL)
-        if (canAuth != BiometricManager.BIOMETRIC_SUCCESS) { onSuccess(); return }
+    /**
+     * Biometric / device-credential unlock (§21).
+     *
+     * Authenticator selection is API-aware: combining a biometric class with DEVICE_CREDENTIAL is
+     * only allowed on API 30+ (R). Below that we must use a single class and supply a negative button.
+     * Failing to do this throws IllegalArgumentException — which previously was swallowed, so nothing
+     * happened. Errors are now surfaced via [onError] instead of silently no-op'ing.
+     */
+    private fun authenticate(onSuccess: () -> Unit, onError: (String) -> Unit) {
+        val manager = BiometricManager.from(this)
+        val allowCredentialCombo = Build.VERSION.SDK_INT >= Build.VERSION_CODES.R
+        val authenticators = if (allowCredentialCombo) BIOMETRIC_WEAK or DEVICE_CREDENTIAL else BIOMETRIC_WEAK
+
+        when (manager.canAuthenticate(authenticators)) {
+            BiometricManager.BIOMETRIC_SUCCESS -> Unit
+            BiometricManager.BIOMETRIC_ERROR_NO_HARDWARE,
+            BiometricManager.BIOMETRIC_ERROR_HW_UNAVAILABLE -> {
+                onError("Biometric hardware unavailable. Use the unlock button.")
+                return
+            }
+            BiometricManager.BIOMETRIC_ERROR_NONE_ENROLLED -> {
+                onError("No biometrics enrolled. Add a fingerprint/face in system settings, or use unlock.")
+                return
+            }
+            else -> {
+                onError("Biometric unavailable. Use the unlock button.")
+                return
+            }
+        }
 
         val prompt = BiometricPrompt(
             this, ContextCompat.getMainExecutor(this),
@@ -107,28 +160,55 @@ class MainActivity : FragmentActivity() {
                 override fun onAuthenticationSucceeded(result: BiometricPrompt.AuthenticationResult) {
                     onSuccess()
                 }
+
+                override fun onAuthenticationError(errorCode: Int, errString: CharSequence) {
+                    // User cancelled or a real error — surface it; don't auto-unlock.
+                    if (errorCode != BiometricPrompt.ERROR_USER_CANCELED &&
+                        errorCode != BiometricPrompt.ERROR_NEGATIVE_BUTTON
+                    ) {
+                        onError(errString.toString())
+                    }
+                }
             },
         )
-        val info = BiometricPrompt.PromptInfo.Builder()
+
+        val builder = BiometricPrompt.PromptInfo.Builder()
             .setTitle("Unlock AI Money Tracker")
-            .setAllowedAuthenticators(
-                BiometricManager.Authenticators.BIOMETRIC_WEAK or BiometricManager.Authenticators.DEVICE_CREDENTIAL
-            )
-            .build()
-        runCatching { prompt.authenticate(info) }
+            .setSubtitle("Confirm it's you")
+            .setAllowedAuthenticators(authenticators)
+        // A negative button is required ONLY when DEVICE_CREDENTIAL is not among the allowed authenticators.
+        if (!allowCredentialCombo) builder.setNegativeButtonText("Cancel")
+
+        runCatching { prompt.authenticate(builder.build()) }
+            .onFailure { onError("Couldn't start biometric prompt: ${it.message}") }
     }
 }
 
 @Composable
-private fun LockScreen(biometricEnabled: Boolean, onUnlock: () -> Unit, onRequestBiometric: () -> Unit) {
+private fun LockScreen(
+    biometricEnabled: Boolean,
+    error: String?,
+    onUnlock: () -> Unit,
+    onRequestBiometric: () -> Unit,
+) {
     Column(
         Modifier.fillMaxSize().padding(32.dp),
         verticalArrangement = Arrangement.Center,
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         Text("AI Money Tracker is locked", style = MaterialTheme.typography.titleLarge)
-        Button(onClick = { if (biometricEnabled) onRequestBiometric() else onUnlock() }, modifier = Modifier.padding(top = 16.dp)) {
-            Text(if (biometricEnabled) "Unlock with biometrics" else "Unlock")
+        if (biometricEnabled) {
+            Button(onClick = onRequestBiometric, modifier = Modifier.padding(top = 16.dp)) {
+                Text("Unlock with biometrics")
+            }
+        }
+        // Always offer a plain unlock so the user is never stuck if biometrics fail/aren't set up.
+        Button(onClick = onUnlock, modifier = Modifier.padding(top = 12.dp)) {
+            Text(if (biometricEnabled) "Enter without biometrics" else "Unlock")
+        }
+        error?.let {
+            Text(it, Modifier.padding(top = 16.dp), color = MaterialTheme.colorScheme.error,
+                style = MaterialTheme.typography.labelSmall)
         }
     }
 }

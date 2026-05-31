@@ -39,20 +39,62 @@ class AnswerChatUseCase @Inject constructor(
         val (start, end, periodLabel) = parsePeriod(q, now)
 
         // ---- Deterministic intent routing ----
+        // Only treat a question as a "spend" query when it actually looks like one; otherwise we'd
+        // answer EVERY unrecognized question with "You spent ₹X this month". Unmatched questions go
+        // to a richer financial-overview answer that the LLM can phrase against real numbers.
         val deterministic: ChatAnswer = when {
             "owe" in q && ("me" in q || "who" in q) -> answerWhoOwes()
             "subscription" in q || "cancel" in q -> answerSubscriptions()
             "balance" in q || "how much money" in q -> answerBalance()
             ("save" in q || "saved" in q) && "year" in q -> answerSavings(DateUtil.startOfYear(now), now, "this year")
-            ("save" in q || "saved" in q) -> answerSavings(start, end, periodLabel)
+            ("save" in q || "saved" in q || "savings" in q) -> answerSavings(start, end, periodLabel)
+            "income" in q || "earn" in q || "salary" in q -> answerIncome(start, end, periodLabel)
             "most" in q && ("friend" in q || "person" in q || "with" in q) -> answerTopPerson(start, end)
             "with" in q && extractPersonName(q) != null -> answerSpendWithPerson(extractPersonName(q)!!, start, end)
-            else -> answerSpend(q, start, end, periodLabel)
+            isSpendQuestion(q) -> answerSpend(q, start, end, periodLabel)
+            else -> answerOverview(start, end, periodLabel, question)
         }
 
         // ---- Optional AI phrasing over the deterministic data ----
         val phrased = aiService.answerChat(question, deterministic.data, history)
         return deterministic.copy(text = phrased ?: deterministic.text)
+    }
+
+    /** Heuristic: does the question actually ask about spending/expenses? */
+    private fun isSpendQuestion(q: String): Boolean {
+        val spendWords = listOf("spent", "spend", "spending", "expense", "expenses", "cost", "paid", "pay")
+        return spendWords.any { it in q } || matchCategory(q) != null || extractAmount(q) != null
+    }
+
+    /**
+     * Fallback for questions we don't have a specific handler for. We hand the LLM a compact financial
+     * snapshot (income, expense, net, top categories) so it can answer over REAL numbers instead of
+     * defaulting to a misleading "you spent X this month". With AI off, we return the snapshot directly.
+     */
+    private suspend fun answerOverview(start: Long, end: Long, period: String, question: String): ChatAnswer {
+        val s = analytics.summary(start, end)
+        val cats = analytics.categoryBreakdown(start, end).take(5)
+        val catText = cats.joinToString(", ") { "${prettyCat(it.category)} ${Money.format(it.total)}" }
+        val text = buildString {
+            append("Here's your $period snapshot — income ${Money.format(s.income)}, ")
+            append("expenses ${Money.format(s.expense)}, net ${Money.format(s.net)}.")
+            if (catText.isNotBlank()) append(" Top categories: $catText.")
+        }
+        val data = buildString {
+            append("metric=overview; period=$period; ")
+            append("income_minor=${s.income}; expense_minor=${s.expense}; net_minor=${s.net}; ")
+            append("top_categories=[")
+            append(cats.joinToString("; ") { "${it.category}:${it.total}" })
+            append("]; note=If the question can't be answered from these figures, say so briefly.")
+        }
+        return ChatAnswer(text, data, TransactionFilter(startDate = start, endDate = end))
+    }
+
+    private suspend fun answerIncome(start: Long, end: Long, period: String): ChatAnswer {
+        val s = analytics.summary(start, end)
+        val text = "Your income $period was ${Money.format(s.income)}."
+        val data = "metric=income; period=$period; income_minor=${s.income}"
+        return ChatAnswer(text, data, TransactionFilter(startDate = start, endDate = end, type = TransactionType.CREDIT))
     }
 
     private suspend fun answerSpend(q: String, start: Long, end: Long, period: String): ChatAnswer {
