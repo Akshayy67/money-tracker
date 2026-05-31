@@ -40,6 +40,30 @@ jobs:
         run: |
           echo "VITE_OPENAI_API_KEY=${{ secrets.OPENAI_API_KEY }}" >> local.properties
 
+      # Print exactly which commit is being built so logs map to source unambiguously.
+      - name: Show commit
+        run: |
+          echo "BUILDING COMMIT: $(git rev-parse HEAD)"
+          echo "SUBJECT: $(git log -1 --pretty=%s)"
+
+      # Pure Kotlin compile FIRST (no KSP). KSP's "[MissingType]: AppDatabase references a type that
+      # is not present" is only a symptom — the real cause is a Kotlin compile error in some entity/
+      # DAO that KSP masks. compileDebugKotlin surfaces those real e:/error: lines.
+      - name: Diagnose with pure Kotlin compile (no KSP)
+        run: |
+          set -o pipefail
+          echo "================ PURE KOTLIN COMPILE (reveals masked errors) ================"
+          ./gradlew compileDebugKotlin --continue 2>&1 | tee kotlin-compile.log | grep -nE "^e: |: error:|Unresolved|Type mismatch|None of the following|Conflicting|Too many|No value passed|expected|cannot|overload resolution|argument type mismatch" | head -120 || echo "no kotlin e: lines captured"
+          echo "============================================================================"
+
+      - name: Upload kotlin compile log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: kotlin-compile-log
+          path: kotlin-compile.log
+          if-no-files-found: ignore
+
       # Build, teeing all output to a file so we can surface the real compiler errors on failure.
       - name: Build debug APK
         run: |
@@ -83,13 +107,6 @@ jobs:
 
       - name: Upload APK
         if: success()
-        uses: actions/upload-artifact@v4
-        with:
-          name: app-debug-apk
-          path: app/build/outputs/apk/debug/app-debug.apk
-          if-no-files-found: error
-
-      - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
           name: app-debug-apk
