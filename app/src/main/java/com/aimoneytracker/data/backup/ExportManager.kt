@@ -8,6 +8,7 @@ import com.aimoneytracker.util.DateUtil
 import com.aimoneytracker.util.Money
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonArray
 import java.io.File
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -42,9 +43,9 @@ class ExportManager @Inject constructor(
     }
 
     fun exportJson(transactions: List<TransactionEntity>, name: String = "transactions"): File {
-        val text = json.encodeToString(
-            kotlinx.serialization.builtins.ListSerializer(TransactionEntity.serializer()), transactions
-        )
+        // Entities are not @Serializable (Room/KSP conflict); build the JSON via EntityJson.
+        val array = JsonArray(transactions.map { EntityJson.toJson(it) })
+        val text = json.encodeToString(JsonArray.serializer(), array)
         return File(exportsDir(), "${name}_${stamp()}.json").apply { writeText(text) }
     }
 

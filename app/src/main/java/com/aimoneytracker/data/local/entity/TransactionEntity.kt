@@ -8,7 +8,6 @@ import com.aimoneytracker.domain.model.PaymentMethod
 import com.aimoneytracker.domain.model.ProcessingFlag
 import com.aimoneytracker.domain.model.TransactionSource
 import com.aimoneytracker.domain.model.TransactionType
-import kotlinx.serialization.Serializable
 
 /**
  * The central record. One row per (possibly merged) financial event.
@@ -31,7 +30,6 @@ import kotlinx.serialization.Serializable
         Index("dedupKey"),
     ]
 )
-@Serializable
 data class TransactionEntity(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
 

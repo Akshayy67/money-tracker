@@ -12,8 +12,12 @@ import com.aimoneytracker.data.local.entity.PersonEntity
 import com.aimoneytracker.data.local.entity.TransactionEntity
 import com.aimoneytracker.data.security.DatabaseKeyProvider
 import dagger.hilt.android.qualifiers.ApplicationContext
-import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.jsonObject
 import java.io.File
 import javax.crypto.Cipher
 import javax.crypto.spec.GCMParameterSpec
@@ -37,27 +41,27 @@ class BackupManager @Inject constructor(
 ) {
     private val json = Json { ignoreUnknownKeys = true; prettyPrint = false }
 
-    @Serializable
-    data class BackupBundle(
-        val version: Int = 1,
-        val createdAt: Long,
-        val transactions: List<TransactionEntity>,
-        val accounts: List<AccountEntity>,
-        val people: List<PersonEntity>,
-        val categories: List<CategoryEntity>,
-    )
-
+    /**
+     * Builds the backup JSON tree by hand (entities are not @Serializable — see [EntityJson]).
+     * Versioned so future restores can migrate older formats.
+     */
     suspend fun createBackup(encrypt: Boolean = true): File {
-        val bundle = BackupBundle(
-            createdAt = System.currentTimeMillis(),
-            transactions = txnDao.queryRaw(
-                androidx.sqlite.db.SimpleSQLiteQuery("SELECT * FROM transactions")
-            ),
-            accounts = accountDao.getAll(),
-            people = personDao.getAll(),
-            categories = categoryDao.getAll(),
+        val transactions = txnDao.queryRaw(
+            androidx.sqlite.db.SimpleSQLiteQuery("SELECT * FROM transactions")
         )
-        val plain = json.encodeToString(BackupBundle.serializer(), bundle).toByteArray()
+        val accounts = accountDao.getAll()
+        val people = personDao.getAll()
+        val categories = categoryDao.getAll()
+
+        val root = buildJsonObject {
+            put("version", JsonPrimitive(1))
+            put("createdAt", JsonPrimitive(System.currentTimeMillis()))
+            put("transactions", JsonArray(transactions.map { EntityJson.toJson(it) }))
+            put("accounts", JsonArray(accounts.map { EntityJson.toJson(it) }))
+            put("people", JsonArray(people.map { EntityJson.toJson(it) }))
+            put("categories", JsonArray(categories.map { EntityJson.toJson(it) }))
+        }
+        val plain = json.encodeToString(JsonObject.serializer(), root).toByteArray()
         val dir = File(context.filesDir, "backups").apply { mkdirs() }
         val stamp = System.currentTimeMillis()
         return if (encrypt) {
@@ -76,13 +80,21 @@ class BackupManager @Inject constructor(
             val (ivB64, ctB64) = content.split(":", limit = 2)
             decryptAesGcm(Base64.decode(ivB64, Base64.NO_WRAP), Base64.decode(ctB64, Base64.NO_WRAP))
         } else content.toByteArray()
-        val bundle = json.decodeFromString(BackupBundle.serializer(), String(plain))
-        categoryDao.insertAll(bundle.categories)
-        bundle.accounts.forEach { accountDao.insert(it) }
-        bundle.people.forEach { personDao.insert(it) }
-        txnDao.insertAll(bundle.transactions)
-        return bundle.transactions.size
+        val root = json.decodeFromString(JsonObject.serializer(), String(plain))
+
+        val categories = (root["categories"] as? JsonArray).orEmpty().map { EntityJson.categoryFrom(it.jsonObject) }
+        val accounts = (root["accounts"] as? JsonArray).orEmpty().map { EntityJson.accountFrom(it.jsonObject) }
+        val people = (root["people"] as? JsonArray).orEmpty().map { EntityJson.personFrom(it.jsonObject) }
+        val transactions = (root["transactions"] as? JsonArray).orEmpty().map { EntityJson.transactionFrom(it.jsonObject) }
+
+        categoryDao.insertAll(categories)
+        accounts.forEach { accountDao.insert(it) }
+        people.forEach { personDao.insert(it) }
+        txnDao.insertAll(transactions)
+        return transactions.size
     }
+
+    private fun JsonArray?.orEmpty(): List<kotlinx.serialization.json.JsonElement> = this ?: emptyList()
 
     fun listBackups(): List<File> =
         File(context.filesDir, "backups").listFiles()?.sortedDescending() ?: emptyList()
