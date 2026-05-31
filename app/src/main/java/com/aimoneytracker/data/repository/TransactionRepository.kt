@@ -184,7 +184,10 @@ class TransactionRepository @Inject constructor(
         }
 
         // 4) Recategorize past similar transactions (same merchant) that the user hasn't hand-edited.
-        if (category != null) {
+        //    Guard: skip bulk-retag for the generic "UPI Payment" placeholder — those are unrelated
+        //    payments that merely couldn't be named, so retagging them all by merchant would be wrong.
+        //    (Handle-level learning above still links the specific payee/handle correctly.)
+        if (category != null && MerchantNormalizer.isResolved(txn.merchantNormalized)) {
             val similar = txnDao.queryRaw(
                 TransactionFilter(merchant = txn.merchantNormalized, includeIgnored = true).toQuery()
             )

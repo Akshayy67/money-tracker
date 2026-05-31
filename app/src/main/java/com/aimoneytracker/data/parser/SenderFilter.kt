@@ -7,8 +7,6 @@ package com.aimoneytracker.data.parser
  */
 object SenderFilter {
 
-    // Indian alphanumeric sender IDs look like "VK-HDFCBK", "AD-SBIINB", "JD-ICICIT", "VM-PAYTM".
-    // We match on the bank/UPI token after the optional 2-char prefix.
     private val FINANCIAL_SENDER_TOKENS = listOf(
         "HDFC", "SBI", "SBIINB", "SBIUPI", "ICICI", "ICICIB", "AXIS", "AXISBK", "KOTAK", "PNB",
         "BOB", "CANBNK", "UNION", "IDBI", "YESBNK", "INDUS", "FEDERAL", "RBL", "IDFC", "AUBANK",

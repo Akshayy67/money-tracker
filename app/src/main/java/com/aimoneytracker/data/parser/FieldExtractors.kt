@@ -133,22 +133,39 @@ object FieldExtractors {
         }
     }
 
+    // Words that follow "to/at/from" but are NOT a merchant (avoids "to your account" etc.).
+    private val NON_MERCHANT_PAYEE = setOf(
+        "your", "you", "a", "ac", "account", "the", "my", "self", "wallet", "bank", "card", "vpa",
+    )
+
     /**
-     * Extract the merchant/payee phrase. Prefers a VPA's name part, then a "to/at <name>" capture.
-     * Returns the raw text; [MerchantNormalizer] cleans it afterward.
+     * Extract the merchant/payee phrase. Collects both a "to/at/from <name>" capture and the VPA's
+     * local-part, then prefers the cleaner one: a real alphabetic payee name beats a junky/numeric VPA
+     * handle (e.g. for "Rs 500 to RAVI KUMAR via UPI 98765@ybl" we want "RAVI KUMAR", not "98765").
+     * Returns the raw text; [MerchantNormalizer] cleans/validates it afterward.
      */
     fun extractMerchantRaw(body: String): String? {
-        VPA_REGEX.find(body)?.let { m ->
-            val name = m.groupValues[1]
-            if (name.length in 2..40 && !name.all { it.isDigit() }) return name
+        val payeeName = PAYEE_REGEX.find(body)?.let { m ->
+            val candidate = m.groupValues[1].trim().trimEnd('.', ',', '-')
+            // Trim trailing narration like "... on 12-05", "... Ref 123", "... via UPI".
+            val cleaned = candidate
+                .substringBefore(" on ").substringBefore(" Ref").substringBefore(" ref")
+                .substringBefore(" via ").substringBefore(" UPI").substringBefore(" Avl").trim()
+            cleaned.takeIf { it.length >= 2 && it.lowercase() !in NON_MERCHANT_PAYEE }
         }
-        PAYEE_REGEX.find(body)?.let { m ->
-            val candidate = m.groupValues[1].trim().trimEnd('.', ',')
-            // Avoid capturing trailing keywords like "to your account".
-            val cleaned = candidate.substringBefore(" on ").substringBefore(" Ref").trim()
-            if (cleaned.length >= 2) return cleaned
+
+        val vpaName = VPA_REGEX.find(body)?.let { m ->
+            m.groupValues[1].takeIf { it.length in 2..40 && !it.all { c -> c.isDigit() } }
         }
-        return null
+
+        // A payee name with at least one alphabetic word is the most reliable signal.
+        val payeeHasLetters = payeeName?.any { it.isLetter() } == true
+        return when {
+            payeeHasLetters -> payeeName
+            vpaName != null -> vpaName
+            payeeName != null -> payeeName
+            else -> null
+        }
     }
 
     fun extractDateTime(body: String, fallback: Long): Long {
