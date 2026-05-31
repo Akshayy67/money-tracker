@@ -104,10 +104,10 @@ class AnswerChatUseCase @Inject constructor(
     private suspend fun answerWhoOwes(): ChatAnswer {
         val owing = splitRepository.outstandingByPerson()
         if (owing.isEmpty()) return ChatAnswer("Nobody owes you right now — all settled up!", "metric=owes; count=0", null)
-        val lines = owing.entries.sortedByDescending { it.value }.take(10).joinToString("\n") { (pid, amt) ->
-            val name = personRepository.getById(pid)?.name ?: "Person $pid"
-            "• $name owes ${Money.format(amt)}"
-        }
+        // Resolve names first (getById is suspend; can't call it inside the non-suspend joinToString lambda).
+        val topOwing = owing.entries.sortedByDescending { it.value }.take(10)
+        val resolved = topOwing.map { (pid, amt) -> (personRepository.getById(pid)?.name ?: "Person $pid") to amt }
+        val lines = resolved.joinToString("\n") { (name, amt) -> "• $name owes ${Money.format(amt)}" }
         val total = owing.values.sum()
         return ChatAnswer("You're owed ${Money.format(total)} in total:\n$lines",
             "metric=owes; total_minor=$total; people=${owing.size}", null)

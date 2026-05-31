@@ -26,7 +26,7 @@ class DigestWorker @AssistedInject constructor(
         }
         val output = generateDigest(type)
         val title = if (type == DigestType.WEEKLY) "Your weekly recap" else "Your monthly recap"
-        val text = output.content.naturalLanguageSummary ?: output.content.headline
+        val text = output.content.headline
         notifications.postDigest(output.recordId, title, text)
         Result.success()
     }.getOrElse { Result.failure() }

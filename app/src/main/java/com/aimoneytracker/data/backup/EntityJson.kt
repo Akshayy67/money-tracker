@@ -211,7 +211,7 @@ object EntityJson {
     ))
 
     fun categoryFrom(o: JsonObject): CategoryEntity = CategoryEntity(
-        key = o.s("key") ?: return CategoryEntity(key = "unknown", displayName = "Unknown"),
+        key = o.s("key") ?: "unknown",
         displayName = o.s("displayName") ?: "Unknown",
         parentKey = o.s("parentKey"),
         iconName = o.s("iconName"),

@@ -37,6 +37,7 @@ import com.aimoneytracker.data.local.entity.RuleEntity
 import com.aimoneytracker.data.local.entity.SplitEntity
 import com.aimoneytracker.data.local.entity.SplitParticipantEntity
 import com.aimoneytracker.data.local.entity.SubscriptionEntity
+import com.aimoneytracker.data.local.entity.TransactionEntity
 
 @Database(
     entities = [
