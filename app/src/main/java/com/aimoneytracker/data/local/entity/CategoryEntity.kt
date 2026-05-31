@@ -9,7 +9,6 @@ import androidx.room.PrimaryKey
  * can add custom categories.
  */
 @Entity(tableName = "categories")
-@Serializable
 data class CategoryEntity(
     @PrimaryKey val key: String,             // stable key, e.g. "food"
     val displayName: String,
