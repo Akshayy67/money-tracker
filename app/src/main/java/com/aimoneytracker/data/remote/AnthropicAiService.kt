@@ -38,6 +38,14 @@ class AnthropicAiService @Inject constructor(
         return !settings.settings.first().localOnly
     }
 
+    override suspend fun statusReason(): String? {
+        if (BuildConfig.ANTHROPIC_API_KEY.isBlank())
+            return "AI is off: no Anthropic key in this build."
+        if (settings.settings.first().localOnly)
+            return "AI is off: Local-only mode is on (Settings → Privacy)."
+        return null
+    }
+
     override suspend fun categorizeMerchant(
         merchant: String,
         rawMessage: String?,

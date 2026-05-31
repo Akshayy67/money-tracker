@@ -14,6 +14,13 @@ interface AiService {
     /** True when network AI is permitted (key present AND not in Local-only mode). */
     suspend fun isAvailable(): Boolean
 
+    /**
+     * A human-readable AI status for the UI. Returns null when AI is working normally; otherwise a
+     * short reason (no key, Local-only mode, or the last API error like bad key / no credit). Lets the
+     * app tell the user WHY answers are deterministic-only instead of failing silently.
+     */
+    suspend fun statusReason(): String?
+
     /** Suggest a category key for an unknown merchant. Returns one of the catalog keys or null. */
     suspend fun categorizeMerchant(merchant: String, rawMessage: String?, candidateKeys: List<String>): AiCategorySuggestion?
 
