@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Financial data is encrypted on-device; exclude the raw DB from cloud auto-backup. -->
+<full-backup-content>
+    <exclude domain="database" path="aimoneytracker.db" />
+    <exclude domain="sharedpref" path="secure_prefs.xml" />
+</full-backup-content>

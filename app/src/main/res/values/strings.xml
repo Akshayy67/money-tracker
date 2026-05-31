@@ -1,0 +1,44 @@
+<resources>
+    <string name="app_name">AI Money Tracker</string>
+
+    <!-- Navigation -->
+    <string name="nav_dashboard">Dashboard</string>
+    <string name="nav_transactions">Transactions</string>
+    <string name="nav_forecast">Forecast</string>
+    <string name="nav_people">People</string>
+    <string name="nav_more">More</string>
+
+    <!-- Dashboard -->
+    <string name="income">Income</string>
+    <string name="expenses">Expenses</string>
+    <string name="net_savings">Net savings</string>
+    <string name="safe_to_spend">Safe to spend</string>
+    <string name="per_day">/day</string>
+
+    <!-- Review / unknown transaction -->
+    <string name="what_was_this">What was this?</string>
+    <string name="needs_review">Needs review</string>
+    <string name="person">Person</string>
+    <string name="business_shop">Business / Shop</string>
+    <string name="rent">Rent</string>
+    <string name="split">Split</string>
+    <string name="skip">Skip</string>
+    <string name="add_note">Add a note (optional)</string>
+
+    <!-- Generic -->
+    <string name="save">Save</string>
+    <string name="cancel">Cancel</string>
+    <string name="delete">Delete</string>
+    <string name="edit">Edit</string>
+    <string name="search">Search</string>
+    <string name="settings">Settings</string>
+
+    <!-- Notifications -->
+    <string name="channel_transactions">Transactions</string>
+    <string name="channel_review">Needs review</string>
+    <string name="channel_alerts">Alerts</string>
+    <string name="channel_digest">Digests</string>
+
+    <!-- Widget -->
+    <string name="widget_quick_add">Quick add cash</string>
+</resources>
