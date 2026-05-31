@@ -13,6 +13,23 @@ class ParserTest {
     private val now = 1_700_000_000_000L
 
     @Test
+    fun parsesUngroupedFourDigitAmountFully() {
+        // Regression: "Rs1775" must be 1775.00 (177500 paise), not 177 (the old 3-digit truncation bug).
+        val p = registry.parse("VK-HDFCBK", "Rs 1775 debited from A/c XX1234 to SWIGGY", now)
+        assertTrue(p.isFinancial)
+        assertEquals(177500L, p.amount)
+
+        val p2 = registry.parse("VK-HDFCBK", "INR 1775.00 spent at AMAZON", now)
+        assertEquals(177500L, p2.amount)
+
+        val grouped = registry.parse("VK-HDFCBK", "Rs 1,775.50 debited to SWIGGY", now)
+        assertEquals(177550L, grouped.amount)
+
+        val large = registry.parse("VK-HDFCBK", "Rs 1,23,456 debited to SWIGGY", now)
+        assertEquals(12345600L, large.amount)
+    }
+
+    @Test
     fun parsesSbiDebitWithBalance() {
         val body = "Dear Customer, Rs.500.00 debited from A/c XX1234 on 12-05-24 to SWIGGY UPI Ref 123456789. Avl Bal Rs.10,000.00 -SBI"
         val p = registry.parse("VK-SBIINB", body, now)

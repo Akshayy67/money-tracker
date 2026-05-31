@@ -21,20 +21,19 @@ import java.util.Locale
  */
 object FieldExtractors {
 
-    // ₹ / Rs / Rs. / INR  followed by an Indian-grouped amount.
-    private val AMOUNT_REGEX = Regex(
-        """(?:rs\.?|inr|₹)\s*([0-9]{1,3}(?:,[0-9]{2,3})*(?:\.[0-9]{1,2})?|[0-9]+(?:\.[0-9]{1,2})?)""",
-        RegexOption.IGNORE_CASE
-    )
+    // A money number: a run of digits and Indian-style commas, with an optional decimal part.
+    // [0-9][0-9,]* captures the WHOLE number ("1775", "1,775", "12,34,567") — the old
+    // [0-9]{1,3}(?:,[0-9]{2,3})* matched only the first 3 digits of un-grouped amounts (1775 -> 177).
+    private const val NUM = """[0-9][0-9,]*(?:\.[0-9]{1,2})?"""
 
-    // Amount that appears *before* the currency word, e.g. "500 INR" or "500.00 debited".
-    private val AMOUNT_SUFFIX_REGEX = Regex(
-        """([0-9]{1,3}(?:,[0-9]{2,3})*(?:\.[0-9]{1,2})?)\s*(?:rs\.?|inr|₹)""",
-        RegexOption.IGNORE_CASE
-    )
+    // ₹ / Rs / Rs. / INR  followed by an amount.
+    private val AMOUNT_REGEX = Regex("""(?:rs\.?|inr|₹)\s*($NUM)""", RegexOption.IGNORE_CASE)
+
+    // Amount that appears *before* the currency word, e.g. "500 INR" or "1775.00 INR".
+    private val AMOUNT_SUFFIX_REGEX = Regex("""($NUM)\s*(?:rs\.?|inr|₹)""", RegexOption.IGNORE_CASE)
 
     private val BALANCE_REGEX = Regex(
-        """(?:avl|avbl|available|avlbl|a\/c|clear|total)?\s*(?:bal|balance)[:\s.]*\s*(?:rs\.?|inr|₹)?\s*([0-9]{1,3}(?:,[0-9]{2,3})*(?:\.[0-9]{1,2})?)""",
+        """(?:avl|avbl|available|avlbl|a\/c|clear|total)?\s*(?:bal|balance)[:\s.]*\s*(?:rs\.?|inr|₹)?\s*($NUM)""",
         RegexOption.IGNORE_CASE
     )
 
