@@ -73,7 +73,7 @@ class DigestEngine @Inject constructor() {
         val headline = buildHeadline(input.type, input.totalSpent, spendPct, net)
 
         return DigestContent(
-            type = input.type,
+            type = input.type.name,
             periodStart = input.periodStart,
             periodEnd = input.periodEnd,
             totalSpent = input.totalSpent,

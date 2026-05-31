@@ -1,6 +1,5 @@
 package com.aimoneytracker.domain.digest
 
-import com.aimoneytracker.domain.model.DigestType
 import kotlinx.serialization.Serializable
 
 @Serializable
@@ -27,7 +26,8 @@ data class GoalProgress(val name: String, val saved: Long, val target: Long) {
  */
 @Serializable
 data class DigestContent(
-    val type: DigestType,
+    val type: String,                 // DigestType.name ("WEEKLY"/"MONTHLY"); kept as String so this
+                                      // @Serializable model doesn't pull the enum into serialization.
     val periodStart: Long,
     val periodEnd: Long,
 
