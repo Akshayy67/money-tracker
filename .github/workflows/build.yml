@@ -55,6 +55,23 @@ jobs:
           grep -nE "^e: |error: |: error:|Unresolved reference|MissingType|Serializer has not been found|None of the following" build-output.log || echo "No e:/error: lines matched — see full log artifact."
           echo "=============================================================="
 
+      # If only the generic Room MissingType appears, re-run KSP with --info and print the lines
+      # around the error so the actual offending type/element is captured for diagnosis.
+      - name: Verbose KSP diagnosis (on failure)
+        if: failure()
+        run: |
+          echo "================ VERBOSE KSP (--info window) ================"
+          ./gradlew :app:kspDebugKotlin --info --rerun-tasks 2>&1 | tee ksp-info.log | grep -nE -B2 -A6 "MissingType|references a type|XProcessor|Unable to|RoomProcessor|cannot find|error\.NonExistentClass|InvalidType" | head -200 || echo "no extra context found"
+          echo "============================================================"
+
+      - name: Upload verbose KSP log
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ksp-info-log
+          path: ksp-info.log
+          if-no-files-found: ignore
+
       # Always upload the full build log so it can be downloaded and inspected.
       - name: Upload build log
         if: always()
