@@ -46,15 +46,18 @@ jobs:
           echo "BUILDING COMMIT: $(git rev-parse HEAD)"
           echo "SUBJECT: $(git log -1 --pretty=%s)"
 
-      # Pure Kotlin compile FIRST (no KSP). KSP's "[MissingType]: AppDatabase references a type that
-      # is not present" is only a symptom — the real cause is a Kotlin compile error in some entity/
-      # DAO that KSP masks. compileDebugKotlin surfaces those real e:/error: lines.
-      - name: Diagnose with pure Kotlin compile (no KSP)
+      # Compile Kotlin with KSP EXCLUDED (-x kspDebugKotlin). KSP's generic
+      # "[MissingType]: AppDatabase references a type that is not present" masks the real cause; by
+      # skipping KSP we force kotlinc to report the actual e:/error: lines (file + line), or compile
+      # clean — which would prove the code is fine and the issue is purely Room/KSP config.
+      # `|| true` so this diagnostic never aborts the job before the artifact upload.
+      - name: Diagnose - Kotlin compile WITHOUT KSP
         run: |
-          set -o pipefail
-          echo "================ PURE KOTLIN COMPILE (reveals masked errors) ================"
-          ./gradlew compileDebugKotlin --continue 2>&1 | tee kotlin-compile.log | grep -nE "^e: |: error:|Unresolved|Type mismatch|None of the following|Conflicting|Too many|No value passed|expected|cannot|overload resolution|argument type mismatch" | head -120 || echo "no kotlin e: lines captured"
-          echo "============================================================================"
+          echo "================ KOTLIN COMPILE (KSP EXCLUDED) ================"
+          ./gradlew compileDebugKotlin -x kspDebugKotlin --continue 2>&1 | tee kotlin-compile.log || true
+          echo "---------------- e:/error: lines only ----------------"
+          grep -nE "^e: |: error:|Unresolved|Type mismatch|None of the following|Conflicting|argument type mismatch|No value passed|too many|cannot access" kotlin-compile.log || echo "NO KOTLIN ERRORS — code compiles clean without KSP (issue is Room/KSP config, not code)"
+          echo "=============================================================="
 
       - name: Upload kotlin compile log
         if: always()
