@@ -14,9 +14,9 @@ import com.aimoneytracker.data.security.DatabaseKeyProvider
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
-import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.jsonObject
 import java.io.File
 import javax.crypto.Cipher
@@ -53,14 +53,14 @@ class BackupManager @Inject constructor(
         val people = personDao.getAll()
         val categories = categoryDao.getAll()
 
-        val root = buildJsonObject {
-            put("version", JsonPrimitive(1))
-            put("createdAt", JsonPrimitive(System.currentTimeMillis()))
-            put("transactions", JsonArray(transactions.map { EntityJson.toJson(it) }))
-            put("accounts", JsonArray(accounts.map { EntityJson.toJson(it) }))
-            put("people", JsonArray(people.map { EntityJson.toJson(it) }))
-            put("categories", JsonArray(categories.map { EntityJson.toJson(it) }))
-        }
+        val root = JsonObject(mapOf<String, JsonElement>(
+            "version" to JsonPrimitive(1),
+            "createdAt" to JsonPrimitive(System.currentTimeMillis()),
+            "transactions" to JsonArray(transactions.map { EntityJson.toJson(it) }),
+            "accounts" to JsonArray(accounts.map { EntityJson.toJson(it) }),
+            "people" to JsonArray(people.map { EntityJson.toJson(it) }),
+            "categories" to JsonArray(categories.map { EntityJson.toJson(it) }),
+        ))
         val plain = json.encodeToString(JsonObject.serializer(), root).toByteArray()
         val dir = File(context.filesDir, "backups").apply { mkdirs() }
         val stamp = System.currentTimeMillis()
