@@ -110,7 +110,7 @@ class TransactionRepository @Inject constructor(
     ) {
         val txn = txnDao.getById(transactionId) ?: return
         val now = DateUtil.now()
-        var updated = txn.copy(
+        val updated = txn.copy(
             category = category ?: txn.category,
             subcategory = subcategory ?: txn.subcategory,
             relatedPersonId = personId ?: txn.relatedPersonId,
@@ -150,7 +150,7 @@ class TransactionRepository @Inject constructor(
                     displayName = txn.merchantNormalized,
                     category = category,
                     subcategory = subcategory,
-                    isBusiness = markAsBusiness || existing?.isBusiness ?: true,
+                    isBusiness = markAsBusiness || (existing?.isBusiness ?: true),
                     hitCount = (existing?.hitCount ?: 0) + 1,
                     updatedAt = now,
                 )
