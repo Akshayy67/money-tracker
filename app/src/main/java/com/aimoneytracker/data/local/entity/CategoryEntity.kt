@@ -2,7 +2,6 @@ package com.aimoneytracker.data.local.entity
 
 import androidx.room.Entity
 import androidx.room.PrimaryKey
-import kotlinx.serialization.Serializable
 
 /**
  * A category definition. The app ships with a default catalog (see

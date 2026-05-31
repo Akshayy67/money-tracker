@@ -4,10 +4,8 @@ import androidx.room.Entity
 import androidx.room.Index
 import androidx.room.PrimaryKey
 import com.aimoneytracker.domain.model.RelationshipType
-import kotlinx.serialization.Serializable
 
 @Entity(tableName = "people", indices = [Index("name")])
-@Serializable
 data class PersonEntity(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
     val name: String,

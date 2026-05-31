@@ -3,10 +3,8 @@ package com.aimoneytracker.data.local.entity
 import androidx.room.Entity
 import androidx.room.PrimaryKey
 import com.aimoneytracker.domain.model.AccountType
-import kotlinx.serialization.Serializable
 
 @Entity(tableName = "accounts")
-@Serializable
 data class AccountEntity(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
     val name: String,
