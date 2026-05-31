@@ -30,6 +30,7 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewModelScope
+import com.aimoneytracker.domain.ai.AiService
 import com.aimoneytracker.domain.ai.ChatTurn
 import com.aimoneytracker.domain.usecase.AnswerChatUseCase
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -44,6 +45,7 @@ data class ChatMessage(val text: String, val fromUser: Boolean)
 @HiltViewModel
 class ChatViewModel @Inject constructor(
     private val answerChat: AnswerChatUseCase,
+    private val aiService: AiService,
 ) : ViewModel() {
 
     private val _messages = MutableStateFlow(
@@ -53,6 +55,16 @@ class ChatViewModel @Inject constructor(
 
     private val _busy = MutableStateFlow(false)
     val busy: StateFlow<Boolean> = _busy.asStateFlow()
+
+    // Null when AI is working; otherwise a reason (no key / local-only / API error). Shown as a banner.
+    private val _aiStatus = MutableStateFlow<String?>(null)
+    val aiStatus: StateFlow<String?> = _aiStatus.asStateFlow()
+
+    init { refreshStatus() }
+
+    fun refreshStatus() {
+        viewModelScope.launch { _aiStatus.value = aiService.statusReason() }
+    }
 
     fun send(question: String) {
         if (question.isBlank()) return
@@ -65,6 +77,8 @@ class ChatViewModel @Inject constructor(
             val answer = runCatching { answerChat(question, history) }.getOrNull()
             _messages.value = _messages.value + ChatMessage(answer?.text ?: "Sorry, I couldn't work that out.", false)
             _busy.value = false
+            // Refresh status after each call so a fresh API error (bad key / no credit) surfaces.
+            refreshStatus()
         }
     }
 }
@@ -73,9 +87,22 @@ class ChatViewModel @Inject constructor(
 fun ChatScreen(viewModel: ChatViewModel = hiltViewModel()) {
     val messages by viewModel.messages.collectAsStateWithLifecycle()
     val busy by viewModel.busy.collectAsStateWithLifecycle()
+    val aiStatus by viewModel.aiStatus.collectAsStateWithLifecycle()
     var input by remember { mutableStateOf("") }
 
     Column(Modifier.fillMaxSize()) {
+        // Banner explaining AI status. When AI is unavailable the assistant still answers from your
+        // data deterministically — this just tells you why phrasing isn't AI-generated.
+        aiStatus?.let { status ->
+            Text(
+                status,
+                Modifier.fillMaxWidth()
+                    .background(MaterialTheme.colorScheme.errorContainer)
+                    .padding(horizontal = 12.dp, vertical = 8.dp),
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onErrorContainer,
+            )
+        }
         LazyColumn(Modifier.weight(1f).fillMaxWidth(), reverseLayout = false) {
             items(messages) { msg -> ChatBubble(msg) }
             if (busy) item { Text("…", Modifier.padding(16.dp), color = MaterialTheme.colorScheme.outline) }

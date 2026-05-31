@@ -37,9 +37,20 @@ class OpenAiService @Inject constructor(
     private val endpoint = "https://api.openai.com/v1/chat/completions"
     private val mediaType = "application/json".toMediaType()
 
+    // The last network error message (e.g. "401 invalid key", "429 no credit"), surfaced via statusReason().
+    @Volatile private var lastError: String? = null
+
     override suspend fun isAvailable(): Boolean {
         if (BuildConfig.OPENAI_API_KEY.isBlank()) return false
         return !settings.settings.first().localOnly
+    }
+
+    override suspend fun statusReason(): String? {
+        if (BuildConfig.OPENAI_API_KEY.isBlank())
+            return "AI is off: no OpenAI key in this build. Add the OPENAI_API_KEY repo secret and rebuild."
+        if (settings.settings.first().localOnly)
+            return "AI is off: Local-only mode is on (Settings → Privacy)."
+        return lastError?.let { "AI error: $it" }
     }
 
     override suspend fun categorizeMerchant(
@@ -122,12 +133,23 @@ class OpenAiService @Inject constructor(
                 .post(json.encodeToString(ChatRequest.serializer(), body).toRequestBody(mediaType))
                 .build()
             client.newCall(request).execute().use { resp ->
-                if (!resp.isSuccessful) return@withContext null
+                if (!resp.isSuccessful) {
+                    // Capture a concise reason so the UI can explain why AI is silent.
+                    val bodyText = resp.body?.string().orEmpty()
+                    lastError = when (resp.code) {
+                        401 -> "invalid API key (401)"
+                        402 -> "payment required / no credit (402)"
+                        429 -> "rate limited or no credit/quota (429)"
+                        else -> "HTTP ${resp.code}"
+                    } + bodyText.take(160).let { if (it.isNotBlank()) " — ${it.replace("\n", " ")}" else "" }
+                    return@withContext null
+                }
+                lastError = null
                 val raw = resp.body?.string() ?: return@withContext null
                 val parsed = json.decodeFromString<ChatResponse>(raw)
                 parsed.choices.firstOrNull()?.message?.content?.trim()
             }
-        }.getOrNull()
+        }.onFailure { lastError = it.message ?: "network error" }.getOrNull()
     }
 
     private fun extractJson(text: String): String {
