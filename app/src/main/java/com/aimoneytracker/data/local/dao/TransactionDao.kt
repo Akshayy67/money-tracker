@@ -55,10 +55,11 @@ interface TransactionDao {
     @Query("SELECT * FROM transactions WHERE isArchived = 0 ORDER BY dateTime DESC")
     fun pagingAll(): PagingSource<Int, TransactionEntity>
 
-    /** Dynamic filtering/search/paging — built by [com.aimoneytracker.data.repository] from a filter spec. */
-    @RawQuery(observedEntities = [TransactionEntity::class])
-    fun pagingFiltered(query: SupportSQLiteQuery): PagingSource<Int, TransactionEntity>
-
+    /**
+     * Dynamic filtering/search built from a filter spec. Paging over this is handled manually by
+     * [com.aimoneytracker.data.repository.TransactionPagingSource] (Room's @RawQuery cannot return a
+     * PagingSource), using LIMIT/OFFSET via [queryRaw].
+     */
     @RawQuery(observedEntities = [TransactionEntity::class])
     fun observeFiltered(query: SupportSQLiteQuery): Flow<List<TransactionEntity>>
 

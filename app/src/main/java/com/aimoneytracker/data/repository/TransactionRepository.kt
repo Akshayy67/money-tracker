@@ -47,7 +47,7 @@ class TransactionRepository @Inject constructor(
 
     fun paging(filter: TransactionFilter): Flow<PagingData<TransactionEntity>> =
         Pager(PagingConfig(pageSize = 40, enablePlaceholders = false)) {
-            txnDao.pagingFiltered(filter.toQuery())
+            TransactionPagingSource(txnDao, filter)
         }.flow
 
     fun observeFiltered(filter: TransactionFilter): Flow<List<TransactionEntity>> =
