@@ -40,8 +40,37 @@ jobs:
         run: |
           echo "VITE_OPENAI_API_KEY=${{ secrets.OPENAI_API_KEY }}" >> local.properties
 
+      # Build, teeing all output to a file so we can surface the real compiler errors on failure.
       - name: Build debug APK
-        run: ./gradlew assembleDebug --stacktrace
+        run: |
+          set -o pipefail
+          ./gradlew assembleDebug --stacktrace 2>&1 | tee build-output.log
+
+      # On failure, print ONLY the actual Kotlin/KSP error lines (the `e:` / error: lines) so they
+      # show up clearly in the run summary — these are the lines needed to diagnose the failure.
+      - name: Show compiler errors
+        if: failure()
+        run: |
+          echo "================ COMPILER ERRORS (e: / error:) ================"
+          grep -nE "^e: |error: |: error:|Unresolved reference|MissingType|Serializer has not been found|None of the following" build-output.log || echo "No e:/error: lines matched — see full log artifact."
+          echo "=============================================================="
+
+      # Always upload the full build log so it can be downloaded and inspected.
+      - name: Upload build log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-log
+          path: build-output.log
+          if-no-files-found: warn
+
+      - name: Upload APK
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: app-debug-apk
+          path: app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
