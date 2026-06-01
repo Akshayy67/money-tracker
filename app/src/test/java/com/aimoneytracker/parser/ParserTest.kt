@@ -13,6 +13,30 @@ class ParserTest {
     private val now = 1_700_000_000_000L
 
     @Test
+    fun extractsDayCorrectlyWithoutClampingTo28() {
+        // Regression: the 31st must stay the 31st (old code clamped day to 28).
+        val zone = java.time.ZoneId.systemDefault()
+        val dt = com.aimoneytracker.data.parser.FieldExtractors
+            .extractDateTime("Rs.500 debited on 31-01-2024 to SWIGGY", now)
+        val ld = java.time.Instant.ofEpochMilli(dt).atZone(zone).toLocalDate()
+        assertEquals(31, ld.dayOfMonth)
+        assertEquals(1, ld.monthValue)
+        assertEquals(2024, ld.year)
+
+        // DD-MM disambiguation: 30-04 is 30 April, not clamped/swapped.
+        val apr = com.aimoneytracker.data.parser.FieldExtractors
+            .extractDateTime("Rs.500 debited on 30/04/24 to SWIGGY", now)
+        val aprLd = java.time.Instant.ofEpochMilli(apr).atZone(zone).toLocalDate()
+        assertEquals(30, aprLd.dayOfMonth)
+        assertEquals(4, aprLd.monthValue)
+
+        // An impossible date (32-13) falls back to the provided timestamp, not a garbled date.
+        val bad = com.aimoneytracker.data.parser.FieldExtractors
+            .extractDateTime("Rs.500 debited on 32-13-2024 to SWIGGY", now)
+        assertEquals(now, bad)
+    }
+
+    @Test
     fun parsesUngroupedFourDigitAmountFully() {
         // Regression: "Rs1775" must be 1775.00 (177500 paise), not 177 (the old 3-digit truncation bug).
         val p = registry.parse("VK-HDFCBK", "Rs 1775 debited from A/c XX1234 to SWIGGY", now)

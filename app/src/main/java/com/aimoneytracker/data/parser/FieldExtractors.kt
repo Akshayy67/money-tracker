@@ -167,26 +167,54 @@ object FieldExtractors {
         }
     }
 
+    /**
+     * Extract the transaction date/time from the SMS body, falling back to [fallback] (the SMS
+     * received timestamp) when the body has no usable date or the parsed date is implausible.
+     *
+     * Key correctness rules (this is the "wrong dates after scrape" fix):
+     *  - The real day is used as-is (1..31), validated against the month — NOT clamped to 28, which
+     *    previously turned the 29th/30th/31st into the 28th.
+     *  - Indian bank SMS are DD-MM-YY, but we disambiguate: if the first number is >12 it's the day,
+     *    if the second is >12 it's the day; otherwise assume DD-MM (Indian convention).
+     *  - A parsed date is rejected (→ fallback) if it's invalid or in the future, so a garbled body
+     *    can never override the reliable SMS timestamp with a nonsense date.
+     */
     fun extractDateTime(body: String, fallback: Long): Long {
         val zone = ZoneId.systemDefault()
+        val today = LocalDate.now(zone)
         var date: LocalDate? = null
-        DATE_NUMERIC.find(body)?.let {
-            val d = it.groupValues[1].toInt()
-            val mo = it.groupValues[2].toInt()
-            var y = it.groupValues[3].toInt()
+
+        DATE_NUMERIC.find(body)?.let { m ->
+            val a = m.groupValues[1].toInt()   // first number
+            val b = m.groupValues[2].toInt()   // second number
+            var y = m.groupValues[3].toInt()
             if (y < 100) y += 2000
-            runCatching { date = LocalDate.of(y, mo.coerceIn(1, 12), d.coerceIn(1, 28)) }
-        }
-        if (date == null) {
-            DATE_TEXT.find(body)?.let {
-                val d = it.groupValues[1].toInt()
-                val mon = monthFromText(it.groupValues[2])
-                var y = it.groupValues[3].toInt()
-                if (y < 100) y += 2000
-                if (mon != null) runCatching { date = LocalDate.of(y, mon, d.coerceIn(1, 28)) }
+            // Disambiguate day vs month.
+            val (day, month) = when {
+                a > 12 && b <= 12 -> a to b          // DD-MM
+                b > 12 && a <= 12 -> b to a          // MM-DD
+                else -> a to b                        // ambiguous → Indian DD-MM
+            }
+            if (month in 1..12 && day in 1..daysInMonth(y, month)) {
+                runCatching { date = LocalDate.of(y, month, day) }
             }
         }
-        if (date == null) return fallback
+
+        if (date == null) {
+            DATE_TEXT.find(body)?.let { m ->
+                val day = m.groupValues[1].toInt()
+                val month = monthFromText(m.groupValues[2])
+                var y = m.groupValues[3].toInt()
+                if (y < 100) y += 2000
+                if (month != null && day in 1..daysInMonth(y, month)) {
+                    runCatching { date = LocalDate.of(y, month, day) }
+                }
+            }
+        }
+
+        // Reject a body date that is invalid or in the future — trust the SMS timestamp instead.
+        val resolved = date
+        if (resolved == null || resolved.isAfter(today)) return fallback
 
         var time = LocalTime.of(12, 0)
         TIME_REGEX.find(body)?.let {
@@ -195,10 +223,13 @@ object FieldExtractors {
             val ampm = it.groupValues[3].lowercase()
             if (ampm == "pm" && h < 12) h += 12
             if (ampm == "am" && h == 12) h = 0
-            runCatching { time = LocalTime.of(h.coerceIn(0, 23), mi.coerceIn(0, 59)) }
+            if (h in 0..23 && mi in 0..59) runCatching { time = LocalTime.of(h, mi) }
         }
-        return LocalDateTime.of(date, time).atZone(zone).toInstant().toEpochMilli()
+        return LocalDateTime.of(resolved, time).atZone(zone).toInstant().toEpochMilli()
     }
+
+    private fun daysInMonth(year: Int, month: Int): Int =
+        runCatching { java.time.YearMonth.of(year, month).lengthOfMonth() }.getOrDefault(31)
 
     /** Parse-time flags for special transaction states (§4). */
     fun detectFlag(body: String): ProcessingFlag {
